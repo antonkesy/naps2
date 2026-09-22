@@ -16,6 +16,7 @@ public class DesktopScanController : IDesktopScanController
     private readonly IDesktopSubFormController _desktopSubFormController;
     private readonly DesktopFormProvider _desktopFormProvider;
     private readonly ThumbnailController _thumbnailController;
+    private bool _isScanning;
 
     public DesktopScanController(Naps2Config config, IProfileManager profileManager, IFormFactory formFactory,
         IScanPerformer scanPerformer, DesktopImagesController desktopImagesController,
@@ -31,6 +32,19 @@ public class DesktopScanController : IDesktopScanController
         _desktopFormProvider = desktopFormProvider;
         _thumbnailController = thumbnailController;
     }
+
+    public bool IsScanning
+    {
+        get => _isScanning;
+        private set
+        {
+            if (_isScanning == value) return;
+            _isScanning = value;
+            IsScanningChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public event EventHandler? IsScanningChanged;
 
     private ScanParams DefaultScanParams() =>
         new()
@@ -156,12 +170,25 @@ public class DesktopScanController : IDesktopScanController
 
     private async Task DoScan(ScanProfile profile)
     {
-        var images =
-            _scanPerformer.PerformScan(profile, DefaultScanParams(), _desktopFormProvider.DesktopForm.NativeHandle);
-        var imageCallback = _desktopImagesController.ReceiveScannedImage();
-        await foreach (var image in images)
+        if (IsScanning)
         {
-            imageCallback(image);
+            return;
+        }
+        IsScanning = true;
+        try
+        {
+            var images =
+                _scanPerformer.PerformScan(profile, DefaultScanParams(),
+                    _desktopFormProvider.DesktopForm.NativeHandle);
+            var imageCallback = _desktopImagesController.ReceiveScannedImage();
+            await foreach (var image in images)
+            {
+                imageCallback(image);
+            }
+        }
+        finally
+        {
+            IsScanning = false;
         }
         _desktopFormProvider.DesktopForm.BringToFront();
     }
